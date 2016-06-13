@@ -1,191 +1,150 @@
 package hax3.city;
 
 import android.app.Activity;
-import android.app.AlertDialog;
-import android.app.ProgressDialog;
-import android.content.DialogInterface;
 import android.content.Intent;
-import android.content.SharedPreferences;
+import android.net.Uri;
 import android.os.AsyncTask;
 import android.os.Bundle;
 import android.view.View;
-import android.widget.ImageButton;
+import android.widget.AdapterView;
+import android.widget.Button;
+import android.widget.EditText;
+import android.widget.ListAdapter;
+import android.widget.ListView;
+import android.widget.SimpleAdapter;
 import android.widget.TextView;
 import android.widget.Toast;
-import android.widget.ToggleButton;
 
-import org.apache.http.HttpEntity;
-import org.apache.http.HttpResponse;
-import org.apache.http.NameValuePair;
-import org.apache.http.client.ClientProtocolException;
-import org.apache.http.client.HttpClient;
-import org.apache.http.client.entity.UrlEncodedFormEntity;
-import org.apache.http.client.methods.HttpPost;
-import org.apache.http.impl.client.DefaultHttpClient;
-import org.apache.http.message.BasicNameValuePair;
 import org.json.JSONArray;
 import org.json.JSONException;
 import org.json.JSONObject;
 
 import java.io.BufferedReader;
-import java.io.IOException;
-import java.io.InputStream;
 import java.io.InputStreamReader;
-import java.io.UnsupportedEncodingException;
+import java.net.HttpURLConnection;
+import java.net.URL;
 import java.util.ArrayList;
-import java.util.List;
+import java.util.HashMap;
 
 
 public class MainActivity extends Activity {
-    private String url = "http://ec2-52-39-206-204.us-west-2.compute.amazonaws.com/getdata.php";
-    private String myJSON;
-    private int lockerNum;
-    private JSONArray results;
-    private String userId;
-    private BackPressCloseHandler backPressCloseHandler;
 
-    SharedPreferences setting;
-    SharedPreferences.Editor editor;
+    String myJSON;
+
+    private static final String TAG_RESULTS="result";
+    private static final String TAG_ID = "id";
+    private static final String TAG_NAME = "name";
+
+    JSONArray peoples = null;
+
+    ArrayList<HashMap<String, String>> personList;
+
+    ListView list;
+    String clicked;
+    TextView selected;
+    Button infoButton;
+    Button mapButton;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
-
-        backPressCloseHandler = new BackPressCloseHandler(this);
-
-        setting = getSharedPreferences("setting", 0);
-        editor= setting.edit();
-
-        Intent intent = getIntent();
-        userId = (String) intent.getSerializableExtra("USERID");
-
-        onResume();
+        list = (ListView) findViewById(R.id.listView);
+        selected = (TextView) findViewById(R.id.clicked_spot);
+        infoButton = (Button) findViewById(R.id.info_button);
+        mapButton = (Button) findViewById(R.id.map_button);
+        personList = new ArrayList<HashMap<String,String>>();
+        getData("http://ec2-52-39-206-204.us-west-2.compute.amazonaws.com/getdata_city.php");
+        list.setOnItemClickListener(listener);
     }
 
-    public void getLockerNum(String url) {
-        class GetDataJSON extends AsyncTask<String, Void, String> {
+    View.OnClickListener clickListener = new View.OnClickListener() {
+        @Override
+        public void onClick(View v) {
+
+        }
+    };
+
+    AdapterView.OnItemClickListener listener= new AdapterView.OnItemClickListener() {
+        @Override
+        public void onItemClick(AdapterView<?> parent, View view, int position, long id) {
+            // TODO Auto-generated method stub
+            //클릭된 아이템의 위치를 이용하여 데이터인 문자열을 Toast로 출력
+            selected.setText(personList.get(position).get(TAG_NAME));
+            clicked = personList.get(position).get(TAG_NAME);
+        }
+    };
+    protected void showList(){
+        try {
+            JSONObject jsonObj = new JSONObject(myJSON);
+            peoples = jsonObj.getJSONArray(TAG_RESULTS);
+
+            for(int i=0;i<peoples.length();i++){
+                JSONObject c = peoples.getJSONObject(i);
+                String id = c.getString(TAG_ID);
+                String name = c.getString(TAG_NAME);
+
+                HashMap<String,String> persons = new HashMap<String,String>();
+
+                persons.put(TAG_ID,id);
+                persons.put(TAG_NAME,name);
+
+                personList.add(persons);
+            }
+
+            ListAdapter adapter = new SimpleAdapter(
+                    MainActivity.this, personList, R.layout.list_item,
+                    new String[]{TAG_ID,TAG_NAME},
+                    new int[]{R.id.id, R.id.name}
+            );
+
+            list.setAdapter(adapter);
+
+        } catch (JSONException e) {
+            e.printStackTrace();
+        }
+
+    }
+
+    public void getData(String url){
+        class GetDataJSON extends AsyncTask<String, Void, String>{
+
             @Override
             protected String doInBackground(String... params) {
+
                 String uri = params[0];
-                InputStream is = null;
-                List<NameValuePair> nameValuePairs = new ArrayList<NameValuePair>();
-                nameValuePairs.add(new BasicNameValuePair("userid", userId));
 
-                String result = null;
+                BufferedReader bufferedReader = null;
                 try {
-                    HttpClient httpClient = new DefaultHttpClient();
-                    HttpPost httpPost = new HttpPost(uri);
-                    httpPost.setEntity(new UrlEncodedFormEntity(nameValuePairs));
-
-                    HttpResponse response = httpClient.execute(httpPost);
-
-                    HttpEntity entity = response.getEntity();
-
-                    is = entity.getContent();
-
-                    BufferedReader reader = new BufferedReader(new InputStreamReader(is, "UTF-8"), 8);
+                    URL url = new URL(uri);
+                    HttpURLConnection con = (HttpURLConnection) url.openConnection();
                     StringBuilder sb = new StringBuilder();
 
-                    String line = null;
-                    while ((line = reader.readLine()) != null) {
-                        sb.append(line + "\n");
+                    bufferedReader = new BufferedReader(new InputStreamReader(con.getInputStream()));
+
+                    String json;
+                    while((json = bufferedReader.readLine())!= null){
+                        sb.append(json+"\n");
                     }
-                    result = sb.toString();
-                } catch (ClientProtocolException e) {
-                    e.printStackTrace();
-                } catch (UnsupportedEncodingException e) {
-                    e.printStackTrace();
-                } catch (IOException e) {
-                    e.printStackTrace();
+
+                    return sb.toString().trim();
+
+                }catch(Exception e){
+                    return null;
                 }
-                return result;
+
+
+
             }
+
             @Override
-            protected void onPostExecute(String result) {
-                myJSON = result;
-                try {
-                    JSONObject jsonObj = new JSONObject(myJSON);
-                    results = jsonObj.getJSONArray("result");
-                    for (int i = 0; i < results.length(); i++) {
-                        JSONObject c = results.getJSONObject(i);
-                        lockerNum = c.getInt("lockerNum");
-                    }
-                } catch (JSONException e) {
-                    e.printStackTrace();
-                }
+            protected void onPostExecute(String result){
+                myJSON=result;
+                showList();
             }
         }
         GetDataJSON g = new GetDataJSON();
         g.execute(url);
     }
 
-    private void turnInLocker() {
-        class InsertData extends AsyncTask<String, Void, String> {
-            ProgressDialog loading;
-
-            @Override
-            protected void onPreExecute() {
-                super.onPreExecute();
-                loading = ProgressDialog.show(MainActivity.this, "Please Wait", null, true, true);
-            }
-
-            @Override
-            protected void onPostExecute(String s) {
-                super.onPostExecute(s);
-                loading.dismiss();
-            }
-
-            @Override
-            protected String doInBackground(String... params) {
-                InputStream is = null;
-                List<NameValuePair> nameValuePairs = new ArrayList<NameValuePair>();
-                nameValuePairs.add(new BasicNameValuePair("userid", userId));
-                nameValuePairs.add(new BasicNameValuePair("lockerid", Integer.toString(lockerNum)));
-                nameValuePairs.add(new BasicNameValuePair("limit", "0"));
-                String result = null;
-
-                try {
-                    HttpClient httpClient = new DefaultHttpClient();
-                    HttpPost httpPost = new HttpPost(
-                            "http://ec2-52-39-206-204.us-west-2.compute.amazonaws.com/turnin.php");
-                    httpPost.setEntity(new UrlEncodedFormEntity(nameValuePairs));
-
-                    HttpResponse response = httpClient.execute(httpPost);
-
-                    HttpEntity entity = response.getEntity();
-
-                    is = entity.getContent();
-                    BufferedReader reader = new BufferedReader(new InputStreamReader(is, "UTF-8"), 8);
-                    StringBuilder sb = new StringBuilder();
-
-                    String line = null;
-                    while ((line = reader.readLine()) != null) {
-                        sb.append(line + "\n");
-                    }
-                    result = sb.toString();
-                } catch (ClientProtocolException e) {
-                    e.printStackTrace();
-                } catch (UnsupportedEncodingException e) {
-                    e.printStackTrace();
-                } catch (IOException e) {
-                    e.printStackTrace();
-                }
-                return result;
-            }
-        }
-        InsertData task = new InsertData();
-        task.execute();
-    }
-
-
-    public void onBackPressed() {
-        backPressCloseHandler.onBackPressed();
-    }
-
-    @Override
-    public void onResume() {
-        super.onResume();
-        getLockerNum(url);
-    }
 }
